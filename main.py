@@ -4,6 +4,8 @@ Author: [Apna Naam]
 Registration: [Apna Registration No.]
 """
 
+import asyncio
+import sys
 import os
 import logging
 import requests
@@ -12,12 +14,23 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
 
+# 🔥 CRITICAL FIX: Event loop for Python compatibility
+if sys.platform == "win32" and sys.version_info >= (3, 8):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Create event loop agar nahi hai
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 # ==================== CONFIGURATION ====================
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-NEWS_API_KEY = os.getenv("NEWS_API_KEY", "demo")  # Default "demo" agar key na mile
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "demo")
 
-# Logging setup (debugging ke liye)
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -44,27 +57,27 @@ NEWS_SOURCES = {
     }
 }
 
-# ==================== DEMO NEWS DATA (jab API key na ho) ====================
+# ==================== DEMO NEWS DATA ====================
 DEMO_NEWS = {
     "india": [
-        {"title": "India launches Chandrayaan-4 mission to Moon", "source": "ISRO", "description": "ISRO successfully launches next lunar mission..."},
-        {"title": "New education policy implemented across all states", "source": "Education Ministry", "description": "Major reforms in school education..."},
-        {"title": "Stock market reaches all-time high of 85,000", "source": "BSE", "description": "Sensex crosses 85,000 mark for first time..."}
+        {"title": "India launches Chandrayaan-4 mission to Moon", "source": "ISRO", "description": "ISRO successfully launches next lunar mission...", "url": "#"},
+        {"title": "New education policy implemented across all states", "source": "Education Ministry", "description": "Major reforms in school education...", "url": "#"},
+        {"title": "Stock market reaches all-time high of 85,000", "source": "BSE", "description": "Sensex crosses 85,000 mark for first time...", "url": "#"}
     ],
     "technology": [
-        {"title": "WhatsApp introduces new privacy features", "source": "TechCrunch", "description": "New features include disappearing messages..."},
-        {"title": "Google unveils Gemini AI model in India", "source": "The Verge", "description": "Advanced AI model now available in Indian languages..."},
-        {"title": "iPhone 16 launch date announced", "source": "Apple Insider", "description": "Apple confirms September event for new iPhone..."}
+        {"title": "WhatsApp introduces new privacy features", "source": "TechCrunch", "description": "New features include disappearing messages...", "url": "#"},
+        {"title": "Google unveils Gemini AI model in India", "source": "The Verge", "description": "Advanced AI model now available in Indian languages...", "url": "#"},
+        {"title": "iPhone 16 launch date announced", "source": "Apple Insider", "description": "Apple confirms September event for new iPhone...", "url": "#"}
     ],
     "business": [
-        {"title": "Reliance acquires major retail chain", "source": "Economic Times", "description": "Deal worth ₹5000 crore signed..."},
-        {"title": "RBI keeps repo rate unchanged", "source": "Bloomberg", "description": "Central bank maintains status quo..."},
-        {"title": "Startup funding reaches ₹1 lakh crore", "source": "Business Standard", "description": "Indian startups see record funding in Q1..."}
+        {"title": "Reliance acquires major retail chain", "source": "Economic Times", "description": "Deal worth ₹5000 crore signed...", "url": "#"},
+        {"title": "RBI keeps repo rate unchanged", "source": "Bloomberg", "description": "Central bank maintains status quo...", "url": "#"},
+        {"title": "Startup funding reaches ₹1 lakh crore", "source": "Business Standard", "description": "Indian startups see record funding in Q1...", "url": "#"}
     ],
     "science": [
-        {"title": "ISRO successfully tests crew escape system", "source": "ISRO", "description": "Critical test for Gaganyaan mission successful..."},
-        {"title": "New malaria vaccine developed by Indian scientists", "source": "ICMR", "description": "Breakthrough in vaccine research..."},
-        {"title": "Quantum computing breakthrough at IIT Bombay", "source": "Nature India", "description": "Researchers achieve 100-qubit milestone..."}
+        {"title": "ISRO successfully tests crew escape system", "source": "ISRO", "description": "Critical test for Gaganyaan mission successful...", "url": "#"},
+        {"title": "New malaria vaccine developed by Indian scientists", "source": "ICMR", "description": "Breakthrough in vaccine research...", "url": "#"},
+        {"title": "Quantum computing breakthrough at IIT Bombay", "source": "Nature India", "description": "Researchers achieve 100-qubit milestone...", "url": "#"}
     ]
 }
 
@@ -73,7 +86,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Welcome message with inline keyboard"""
     user = update.effective_user
     
-    # Inline keyboard banayein
     keyboard = [
         [InlineKeyboardButton("📰 Latest News", callback_data="news_india")],
         [InlineKeyboardButton("💻 Technology", callback_data="news_technology"),
@@ -135,11 +147,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Technology 💻\n"
         "• Business 📈\n"
         "• Science 🔬\n\n"
-        "**Features:**\n"
-        "• AI-powered summarization\n"
-        "• Latest headlines\n"
-        "• Source attribution\n"
-        "• Reading time estimates\n\n"
         "**Developer:** [Apna Naam]\n"
         "**Registration:** [Apna Registration No.]"
     )
@@ -155,7 +162,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "**Built with:** Python + python-telegram-bot\n"
         "**Hosted on:** Render (Free Tier)\n\n"
         "**Purpose:**\n"
-        "This bot fetches latest news from various sources and provides concise summaries using AI.\n\n"
+        "This bot fetches latest news from various sources and provides concise summaries.\n\n"
         "**Data Sources:**\n"
         "• NewsAPI.org\n"
         "• Demo data (when API key not available)\n\n"
@@ -184,29 +191,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def fetch_and_send_news(query, category):
     """Fetch news for selected category and send to user"""
-    # Show typing indicator
     await query.edit_message_text(f"🔍 Fetching {NEWS_SOURCES[category]['name']}...")
     
     try:
-        # Real API se fetch karne ki koshish
         news_items = await fetch_news_from_api(category)
         
-        # Agar API fail ho jaye to demo data use karo
         if not news_items:
             news_items = DEMO_NEWS.get(category, DEMO_NEWS["india"])
         
-        # Summary prepare karo
         summary = await generate_summary(news_items, category)
         
-        # Inline keyboard for more options
         keyboard = [
             [InlineKeyboardButton("🔄 Refresh", callback_data=f"news_{category}"),
-             InlineKeyboardButton("🔙 Categories", callback_data="back_to_categories")],
-            [InlineKeyboardButton("📢 Share", switch_inline_query=f"News summary: {category}")]
+             InlineKeyboardButton("🔙 Categories", callback_data="back_to_categories")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Send final message
         await query.edit_message_text(
             summary,
             reply_markup=reply_markup,
@@ -224,7 +224,7 @@ async def fetch_and_send_news(query, category):
 async def fetch_news_from_api(category):
     """Fetch real news from NewsAPI"""
     if NEWS_API_KEY == "demo" or not NEWS_API_KEY:
-        return None  # Demo mode mein hain
+        return None
     
     try:
         url = NEWS_SOURCES[category]["url"]
@@ -235,9 +235,8 @@ async def fetch_news_from_api(category):
             articles = data.get('articles', [])
             
             if articles:
-                # Format articles
                 formatted_articles = []
-                for article in articles[:5]:  # Top 5 articles
+                for article in articles[:5]:
                     formatted_articles.append({
                         'title': article.get('title', 'No title'),
                         'source': article.get('source', {}).get('name', 'Unknown'),
@@ -249,7 +248,7 @@ async def fetch_news_from_api(category):
     except Exception as e:
         logger.error(f"API fetch error: {e}")
     
-    return None  # Fall back to demo data
+    return None
 
 async def generate_summary(news_items, category):
     """Generate a formatted summary from news items"""
@@ -260,24 +259,18 @@ async def generate_summary(news_items, category):
         "science": "🔬 Science News"
     }
     
-    # Category ka display name
     cat_name = category_names.get(category, "📰 News")
-    
-    # Current time
     current_time = datetime.now().strftime("%d %b %Y, %I:%M %p")
     
-    # Start building summary
     summary = f"**{cat_name}**\n"
     summary += f"📅 *{current_time}*\n\n"
     
-    # Add each news item
-    for i, item in enumerate(news_items[:5], 1):  # Max 5 items
+    for i, item in enumerate(news_items[:5], 1):
         title = item.get('title', 'No title')
         source = item.get('source', 'Unknown')
         description = item.get('description', '')
         url = item.get('url', '')
         
-        # Clean title (remove common suffixes)
         if ' - ' in title:
             title = title.split(' - ')[0]
         
@@ -285,18 +278,15 @@ async def generate_summary(news_items, category):
         summary += f"📌 *Source:* {source}\n"
         
         if description and description != "No description available":
-            # Simple summarization - first 100 chars
             short_desc = description[:100] + "..." if len(description) > 100 else description
             summary += f"📝 {short_desc}\n"
         
         if url and url != '#':
-            # Shorten URL for display
             display_url = url.replace('https://', '').replace('http://', '')[:30]
             summary += f"🔗 [{display_url}]({url})\n"
         
         summary += "\n"
     
-    # Add footer
     summary += "---\n"
     summary += "🔹 _Powered by News Summarizer Bot_\n"
     summary += "🔄 Send /news for more categories"
@@ -319,7 +309,6 @@ async def back_to_categories(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode='Markdown'
     )
 
-# ==================== ERROR HANDLER ====================
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors"""
     logger.error(f"Update {update} caused error {context.error}")
