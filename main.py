@@ -1,3 +1,9 @@
+import asyncio
+import sys
+
+# Force Python 3.11+ event loop policy
+if sys.version_info >= (3, 8) and sys.platform == "linux":
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 """
 News Summarizer Telegram Bot
 Author: [Apna Naam]
